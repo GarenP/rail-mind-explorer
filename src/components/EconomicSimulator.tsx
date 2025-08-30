@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
-import { Canvas as FabricCanvas, Rect, Circle, FabricImage, FabricText } from 'fabric';
 
-// Simplified game types to match core mechanics
+// Game mechanics enums
 export enum GameMapType {
   Australia = "Australia",
   Asia = "Asia", 
@@ -17,41 +16,173 @@ export enum GameMapType {
 export enum UnitType {
   Factory = "Factory",
   City = "City", 
-  Port = "Port",
-  Train = "Train"
+  Port = "Port"
 }
 
-// Simplified building and tile interfaces
+// Game state interfaces
 interface Building {
-  id: string;
+  id: number;
   type: UnitType;
   x: number;
   y: number;
-  level: number;
-  goldGeneration: number;
+  goldPerTick: number;
+  ownerId: number;
 }
 
-interface Tile {
-  x: number;
-  y: number;
-  terrain: number; // Terrain value from binary data
-  magnitude: number; // Elevation data
-  isShore: boolean;
+interface GameTile {
+  isLand: boolean;
+  elevation: number;
   buildings: Building[];
 }
 
-// Terrain coloring based on game's PastelTheme
-const TERRAIN_COLORS = {
-  background: '#202c47', // Deep blue background
-  water: '#3366bb', // Ocean blue
-  shore: '#4a90e2', // Lighter shore blue
-  land: {
-    low: '#8fbc8f', // Dark sea green for low elevations
-    medium: '#9acd32', // Yellow green for medium
-    high: '#daa520', // Goldenrod for high elevations
-    mountain: '#cd853f', // Peru/brown for mountains
+interface Player {
+  id: number;
+  name: string;
+  gold: number;
+  buildings: Building[];
+}
+
+// Game world representation
+class GameWorld {
+  width: number;
+  height: number;
+  tiles: GameTile[][];
+  players: Player[];
+  currentTick: number;
+  
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.currentTick = 0;
+    this.players = [{ id: 1, name: "Player", gold: 1000, buildings: [] }];
+    this.generateAustraliaMap();
   }
-};
+  
+  generateAustraliaMap() {
+    this.tiles = [];
+    const centerX = this.width * 0.5;
+    const centerY = this.height * 0.4;
+    
+    for (let y = 0; y < this.height; y++) {
+      this.tiles[y] = [];
+      for (let x = 0; x < this.width; x++) {
+        // Create Australia-like landmass
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+        
+        // Main continent
+        const inMainland = distFromCenter < Math.min(this.width, this.height) * 0.25;
+        // Tasmania
+        const tasX = this.width * 0.6;
+        const tasY = this.height * 0.8;
+        const tasDist = Math.sqrt((x - tasX) ** 2 + (y - tasY) ** 2);
+        const inTasmania = tasDist < 15;
+        
+        const isLand = inMainland || inTasmania;
+        
+        // Add coastal variation
+        let elevation = 0;
+        if (isLand) {
+          const coastalDistance = Math.min(distFromCenter, tasDist);
+          elevation = Math.max(0, 100 - coastalDistance * 2 + Math.random() * 50);
+        }
+        
+        this.tiles[y][x] = {
+          isLand,
+          elevation,
+          buildings: []
+        };
+      }
+    }
+  }
+  
+  getTile(x: number, y: number): GameTile | null {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return null;
+    return this.tiles[y][x];
+  }
+  
+  canBuildAt(x: number, y: number): boolean {
+    const tile = this.getTile(x, y);
+    return tile ? tile.isLand : false;
+  }
+  
+  buildStructure(playerId: number, type: UnitType, x: number, y: number): Building | null {
+    if (!this.canBuildAt(x, y)) return null;
+    
+    const player = this.players.find(p => p.id === playerId);
+    if (!player) return null;
+    
+    const cost = this.getBuildCost(type);
+    if (player.gold < cost) return null;
+    
+    const building: Building = {
+      id: Date.now() + Math.random(),
+      type,
+      x,
+      y,
+      goldPerTick: this.getGoldPerTick(type),
+      ownerId: playerId
+    };
+    
+    player.gold -= cost;
+    player.buildings.push(building);
+    this.tiles[y][x].buildings.push(building);
+    
+    return building;
+  }
+  
+  getBuildCost(type: UnitType): number {
+    switch (type) {
+      case UnitType.Factory: return 100;
+      case UnitType.City: return 150;
+      case UnitType.Port: return 200;
+      default: return 100;
+    }
+  }
+  
+  getGoldPerTick(type: UnitType): number {
+    switch (type) {
+      case UnitType.Factory: return 3;
+      case UnitType.City: return 2;
+      case UnitType.Port: return 5;
+      default: return 1;
+    }
+  }
+  
+  tick() {
+    this.currentTick++;
+    
+    // Generate gold for all players
+    this.players.forEach(player => {
+      let goldGained = 0;
+      
+      // Calculate base income from buildings
+      player.buildings.forEach(building => {
+        goldGained += building.goldPerTick;
+      });
+      
+      // Apply stacking bonuses/penalties
+      const buildingsByTile = new Map<string, Building[]>();
+      player.buildings.forEach(building => {
+        const key = `${building.x},${building.y}`;
+        if (!buildingsByTile.has(key)) buildingsByTile.set(key, []);
+        buildingsByTile.get(key)!.push(building);
+      });
+      
+      // Calculate stacking efficiency
+      let totalEfficiency = 0;
+      buildingsByTile.forEach(buildings => {
+        buildings.forEach((building, index) => {
+          const efficiency = index === 0 ? 1.0 : 0.7; // 70% efficiency for stacked buildings
+          totalEfficiency += building.goldPerTick * efficiency;
+        });
+      });
+      
+      player.gold += Math.floor(totalEfficiency);
+    });
+  }
+}
 
 interface EconomicSimulatorProps {
   selectedMap: GameMapType;
@@ -68,46 +199,15 @@ interface EconomicStats {
   ticksElapsed: number;
 }
 
-// Map configurations based on actual game data
-const mapConfigs = {
-  [GameMapType.Australia]: {
-    width: 2000,
-    height: 1500,
-    landTiles: 1319763,
-    nations: [
-      { name: "Western Australia", x: 460, y: 720 },
-      { name: "Northern Territory", x: 965, y: 340 },
-      { name: "South Australia", x: 920, y: 915 },
-      { name: "Victoria", x: 1435, y: 1220 },
-      { name: "Queensland", x: 1490, y: 555 },
-      { name: "New South Wales", x: 1605, y: 1025 },
-      { name: "Tasmania", x: 1595, y: 1380 }
-    ]
-  },
-  [GameMapType.Asia]: { width: 1800, height: 1400, landTiles: 800000, nations: [] },
-  [GameMapType.Europe]: { width: 1600, height: 1200, landTiles: 600000, nations: [] },
-  [GameMapType.World]: { width: 2400, height: 1200, landTiles: 1800000, nations: [] },
-  [GameMapType.Britannia]: { width: 800, height: 1200, landTiles: 200000, nations: [] }
-};
-
-// Economic constants based on game mechanics
-const TICKS_PER_SECOND = 10;
-const BASE_GOLD_PER_TICK = {
-  [UnitType.Factory]: 2,
-  [UnitType.City]: 1,
-  [UnitType.Port]: 3
-};
-
 export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMap, onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<FabricCanvas | null>(null);
+  const gameWorldRef = useRef<GameWorld | null>(null);
   const intervalRef = useRef<number | null>(null);
-  const terrainDataRef = useRef<Uint8Array | null>(null);
-  const buildingsRef = useRef<Building[]>([]);
   
-  const [gameState, setGameState] = useState<'loading' | 'ready' | 'running' | 'error'>('loading');
+  const [gameState, setGameState] = useState<'loading' | 'ready' | 'running'>('loading');
   const [gameSpeed, setGameSpeed] = useState(1);
-  const [buildMode, setBuildMode] = useState<UnitType | null>(null);
+  const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
+  const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [stats, setStats] = useState<EconomicStats>({
     goldPerMinute: 0,
     totalGold: 0,
@@ -118,424 +218,222 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
     ticksElapsed: 0
   });
 
-  const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
-  const [showBuildMenu, setShowBuildMenu] = useState(false);
-  const [nextBuildingId, setNextBuildingId] = useState(1);
-
-  // Load real terrain data from game files
+  // Initialize game world
   useEffect(() => {
-    const loadTerrainData = async () => {
-      try {
-        setGameState('loading');
-        
-        const config = mapConfigs[selectedMap];
-        console.log('Loading terrain data for', selectedMap, 'with config:', config);
-        
-        // Try to load actual binary terrain data
-        try {
-          const response = await fetch(`/core/resources/maps/${selectedMap.toLowerCase()}/map.bin`);
-          if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer();
-            terrainDataRef.current = new Uint8Array(arrayBuffer);
-            console.log('Loaded real terrain data:', terrainDataRef.current.length, 'bytes');
-          } else {
-            console.log('Real terrain data not available, generating procedural terrain');
-            generateProceduralTerrain(config);
-          }
-        } catch (fetchError) {
-          console.log('Could not fetch terrain data, generating procedural terrain');
-          generateProceduralTerrain(config);
-        }
-        
-        buildingsRef.current = [];
-        
-        // Setup Fabric.js canvas for realistic rendering
-        setTimeout(() => {
-          if (canvasRef.current) {
-            setupRealisticCanvas();
-          }
-          setGameState('ready');
-        }, 500);
-        
-      } catch (error) {
-        console.error('Failed to load terrain data:', error);
-        setGameState('error');
-      }
-    };
-
-    loadTerrainData();
+    setGameState('loading');
+    
+    // Create game world based on selected map
+    const mapSize = selectedMap === GameMapType.Australia ? { width: 200, height: 150 } : { width: 200, height: 150 };
+    gameWorldRef.current = new GameWorld(mapSize.width, mapSize.height);
+    
+    console.log('Game world initialized for', selectedMap);
+    
+    setTimeout(() => {
+      setupCanvas();
+      updateStats();
+      setGameState('ready');
+    }, 100);
   }, [selectedMap]);
 
-  const generateProceduralTerrain = (config: any) => {
-    // Generate realistic terrain data that mimics Australia's shape and geography
-    const width = 400; // Scaled down for display
-    const height = 300;
-    const terrainData = new Uint8Array(width * height);
+  const setupCanvas = () => {
+    if (!canvasRef.current || !gameWorldRef.current) return;
     
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = y * width + x;
+    const canvas = canvasRef.current;
+    canvas.width = 800;
+    canvas.height = 600;
+    
+    renderWorld();
+    
+    // Add click handler
+    canvas.addEventListener('click', handleCanvasClick);
+  };
+
+  const renderWorld = () => {
+    if (!canvasRef.current || !gameWorldRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const world = gameWorldRef.current;
+    
+    // Clear canvas
+    ctx.fillStyle = '#1e3a5f'; // Ocean background
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate scale
+    const scaleX = canvas.width / world.width;
+    const scaleY = canvas.height / world.height;
+    
+    // Render terrain
+    for (let y = 0; y < world.height; y++) {
+      for (let x = 0; x < world.width; x++) {
+        const tile = world.getTile(x, y);
+        if (!tile) continue;
         
-        // Create Australia-like shape with realistic coastline
-        const centerX = width * 0.5;
-        const centerY = height * 0.4;
+        const screenX = x * scaleX;
+        const screenY = y * scaleY;
         
-        // Distance from center with some randomness for coastline
-        let distFromCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-        distFromCenter += (Math.random() - 0.5) * 20; // Coastline roughness
-        
-        // Australia-specific geographical features
-        const isInMainland = distFromCenter < Math.min(width, height) * 0.35;
-        const isTasmania = Math.sqrt((x - width * 0.6) ** 2 + (y - height * 0.85) ** 2) < 15;
-        const isLand = isInMainland || isTasmania;
-        
-        if (isLand) {
-          // Vary terrain elevation for realistic coloring
-          const elevation = Math.random() * 255;
-          const coastal = distFromCenter > Math.min(width, height) * 0.25;
-          
-          if (coastal) {
-            terrainData[index] = Math.floor(50 + elevation * 0.3); // Coastal areas
+        if (tile.isLand) {
+          // Color based on elevation
+          if (tile.elevation < 30) {
+            ctx.fillStyle = '#8fbc8f'; // Dark sea green - coastal
+          } else if (tile.elevation < 60) {
+            ctx.fillStyle = '#9acd32'; // Yellow green - plains
+          } else if (tile.elevation < 90) {
+            ctx.fillStyle = '#daa520'; // Goldenrod - hills
           } else {
-            terrainData[index] = Math.floor(100 + elevation * 0.6); // Inland areas
+            ctx.fillStyle = '#cd853f'; // Peru - mountains
           }
         } else {
-          terrainData[index] = 0; // Water
+          ctx.fillStyle = '#4682b4'; // Steel blue - water
         }
+        
+        ctx.fillRect(screenX, screenY, scaleX + 1, scaleY + 1);
       }
     }
     
-    terrainDataRef.current = terrainData;
-    console.log('Generated procedural Australia terrain:', terrainData.length, 'bytes');
-  };
-
-  const setupRealisticCanvas = () => {
-    if (!canvasRef.current || !terrainDataRef.current) return;
-    
-    // Dispose of existing canvas
-    if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.dispose();
-    }
-    
-    // Create new Fabric.js canvas for high-quality rendering
-    const fabricCanvas = new FabricCanvas(canvasRef.current, {
-      width: 800,
-      height: 600,
-      backgroundColor: TERRAIN_COLORS.background,
-      selection: false, // Disable object selection
-      renderOnAddRemove: false, // Manual rendering control
-    });
-    
-    fabricCanvasRef.current = fabricCanvas;
-    
-    renderRealisticTerrain();
-    
-    // Handle click events for building placement
-    fabricCanvas.on('mouse:down', (event) => {
-      if (event.e && terrainDataRef.current) {
-        handleCanvasClick(event.e as MouseEvent);
-      }
-    });
-  };
-
-  const renderRealisticTerrain = () => {
-    if (!fabricCanvasRef.current || !terrainDataRef.current) return;
-    
-    const canvas = fabricCanvasRef.current;
-    const terrainData = terrainDataRef.current;
-    
-    // Clear existing terrain objects
-    canvas.clear();
-    canvas.backgroundColor = TERRAIN_COLORS.background;
-    
-    // Calculate dimensions based on terrain data
-    const dataWidth = Math.sqrt(terrainData.length * 1.33); // Approximate width for Australia (4:3 ratio)
-    const dataHeight = Math.floor(terrainData.length / dataWidth);
-    
-    console.log('Rendering terrain with dimensions:', dataWidth, 'x', dataHeight);
-    
-    // Create terrain as image data for performance
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return;
-    
-    tempCanvas.width = dataWidth;
-    tempCanvas.height = dataHeight;
-    
-    const imageData = tempCtx.createImageData(dataWidth, dataHeight);
-    
-    // Process terrain data and apply realistic colors
-    for (let i = 0; i < terrainData.length; i++) {
-      const terrainValue = terrainData[i];
-      const pixelIndex = i * 4;
+    // Render buildings
+    const player = world.players[0];
+    player.buildings.forEach(building => {
+      const screenX = building.x * scaleX;
+      const screenY = building.y * scaleY;
       
-      let color = { r: 0, g: 0, b: 0 };
-      
-      if (terrainValue === 0) {
-        // Water
-        color = { r: 51, g: 102, b: 187 }; // Ocean blue
-      } else if (terrainValue < 30) {
-        // Shore/shallow water
-        color = { r: 74, g: 144, b: 226 }; // Shore blue
-      } else if (terrainValue < 80) {
-        // Low land - coastal plains
-        color = { r: 143, g: 188, b: 143 }; // Dark sea green
-      } else if (terrainValue < 120) {
-        // Medium elevation
-        color = { r: 154, g: 205, b: 50 }; // Yellow green
-      } else if (terrainValue < 180) {
-        // Higher elevation
-        color = { r: 218, g: 165, b: 32 }; // Goldenrod
-      } else {
-        // Mountains/high elevation
-        color = { r: 205, g: 133, b: 63 }; // Peru/brown
-      }
-      
-      imageData.data[pixelIndex] = color.r;
-      imageData.data[pixelIndex + 1] = color.g;
-      imageData.data[pixelIndex + 2] = color.b;
-      imageData.data[pixelIndex + 3] = 255; // Alpha
-    }
-    
-    tempCtx.putImageData(imageData, 0, 0);
-    
-    // Create Fabric image from the terrain data
-    const terrainImage = new Image();
-    terrainImage.onload = () => {
-      const fabricImage = new FabricImage(terrainImage, {
-        left: 0,
-        top: 0,
-        scaleX: canvas.width / dataWidth,
-        scaleY: canvas.height / dataHeight,
-        selectable: false,
-        evented: false,
-      });
-      
-      canvas.add(fabricImage);
-      renderBuildings();
-      canvas.renderAll();
-    };
-    
-    terrainImage.src = tempCanvas.toDataURL();
-  };
-
-  const renderBuildings = () => {
-    if (!fabricCanvasRef.current) return;
-    
-    const canvas = fabricCanvasRef.current;
-    const buildings = buildingsRef.current;
-    
-    // Remove existing building objects (remove all objects with data-type)
-    const objectsToRemove = canvas.getObjects().filter(obj => 
-      (obj as any).dataType && (obj as any).dataType.startsWith('building')
-    );
-    objectsToRemove.forEach(obj => canvas.remove(obj));
-    
-    buildings.forEach((building) => {
-      const x = (building.x / 400) * canvas.width; // Scale coordinates
-      const y = (building.y / 300) * canvas.height;
-      
-      // Stack offset for multiple buildings on same tile
-      const buildingsOnTile = buildings.filter(b => b.x === building.x && b.y === building.y);
-      const stackIndex = buildingsOnTile.findIndex(b => b.id === building.id);
-      const offset = stackIndex * 5;
-      
-      let fabricObject;
-      
-      // Different shapes for different building types
+      // Building colors
       switch (building.type) {
         case UnitType.Factory:
-          fabricObject = new Rect({
-            left: x + offset,
-            top: y + offset,
-            width: 12,
-            height: 12,
-            fill: '#dc2626',
-            stroke: '#ffffff',
-            strokeWidth: 1,
-            selectable: false,
-            evented: false,
-          });
-          (fabricObject as any).dataType = `building-${building.id}`;
+          ctx.fillStyle = '#dc2626'; // Red
           break;
         case UnitType.City:
-          fabricObject = new Circle({
-            left: x + offset,
-            top: y + offset,
-            radius: 8,
-            fill: '#7c3aed',
-            stroke: '#ffffff',
-            strokeWidth: 1,
-            selectable: false,
-            evented: false,
-          });
-          (fabricObject as any).dataType = `building-${building.id}`;
+          ctx.fillStyle = '#7c3aed'; // Purple
           break;
         case UnitType.Port:
-          fabricObject = new Rect({
-            left: x + offset,
-            top: y + offset,
-            width: 14,
-            height: 8,
-            fill: '#0891b2',
-            stroke: '#ffffff',
-            strokeWidth: 1,
-            selectable: false,
-            evented: false,
-          });
-          (fabricObject as any).dataType = `building-${building.id}`;
+          ctx.fillStyle = '#0891b2'; // Cyan
           break;
       }
       
-      if (fabricObject) {
-        canvas.add(fabricObject);
+      const size = Math.max(4, Math.min(scaleX, scaleY) * 0.8);
+      ctx.fillRect(screenX + 1, screenY + 1, size, size);
+      
+      // White border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(screenX + 1, screenY + 1, size, size);
+    });
+    
+    // Render buildings count for stacked buildings
+    const buildingsByTile = new Map<string, Building[]>();
+    player.buildings.forEach(building => {
+      const key = `${building.x},${building.y}`;
+      if (!buildingsByTile.has(key)) buildingsByTile.set(key, []);
+      buildingsByTile.get(key)!.push(building);
+    });
+    
+    buildingsByTile.forEach((buildings, key) => {
+      if (buildings.length > 1) {
+        const [x, y] = key.split(',').map(Number);
+        const screenX = x * scaleX;
+        const screenY = y * scaleY;
         
-        // Add count label for stacked buildings
-        if (buildingsOnTile.length > 1 && stackIndex === 0) {
-          const textObj = new FabricText(buildingsOnTile.length.toString(), {
-            left: x + 15,
-            top: y - 5,
-            fontSize: 12,
-            fill: '#ffffff',
-            stroke: '#000000',
-            strokeWidth: 0.5,
-            selectable: false,
-            evented: false,
-          });
-          (textObj as any).dataType = `building-count-${building.x}-${building.y}`;
-          canvas.add(textObj);
-        }
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px Arial';
+        ctx.fillText(buildings.length.toString(), screenX + 2, screenY + 12);
       }
     });
     
     // Highlight selected tile
     if (selectedTile) {
-      const tileX = (selectedTile.x / 400) * canvas.width;
-      const tileY = (selectedTile.y / 300) * canvas.height;
+      const screenX = selectedTile.x * scaleX;
+      const screenY = selectedTile.y * scaleY;
       
-      const highlight = new Rect({
-        left: tileX - 10,
-        top: tileY - 10,
-        width: 20,
-        height: 20,
-        fill: 'transparent',
-        stroke: '#fbbf24',
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
-      });
-      (highlight as any).dataType = 'tile-highlight';
-      
-      canvas.add(highlight);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(screenX, screenY, scaleX, scaleY);
     }
-    
-    canvas.renderAll();
-  };
-
-  const handleCanvasClick = (event: MouseEvent) => {
-    if (!fabricCanvasRef.current || !terrainDataRef.current) return;
-    
-    const canvas = fabricCanvasRef.current;
-    const canvasElement = canvas.getElement();
-    const rect = canvasElement.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    
-    // Convert screen coordinates to terrain coordinates
-    const terrainX = Math.floor((x / canvas.width) * 400);
-    const terrainY = Math.floor((y / canvas.height) * 300);
-    
-    // Check if clicking on land (terrain value > 0)
-    const terrainIndex = terrainY * 400 + terrainX;
-    if (terrainIndex < terrainDataRef.current.length) {
-      const terrainValue = terrainDataRef.current[terrainIndex];
-      
-      if (terrainValue > 0) { // Only allow building on land
-        setSelectedTile({ x: terrainX, y: terrainY });
-        setShowBuildMenu(true);
-        renderBuildings(); // Re-render to show selection
-      }
-    }
-  };
-
-  const buildUnit = (unitType: UnitType) => {
-    if (!selectedTile || !terrainDataRef.current) return;
-    
-    // Check if trying to build on land
-    const terrainIndex = selectedTile.y * 400 + selectedTile.x;
-    if (terrainIndex >= terrainDataRef.current.length) {
-      console.log('Invalid tile coordinates');
-      setShowBuildMenu(false);
-      return;
-    }
-    
-    const terrainValue = terrainDataRef.current[terrainIndex];
-    if (terrainValue === 0) {
-      console.log(`Cannot build ${unitType} on water`);
-      setShowBuildMenu(false);
-      return;
-    }
-    
-    // Create new building
-    const newBuilding: Building = {
-      id: `${nextBuildingId}`,
-      type: unitType,
-      x: selectedTile.x,
-      y: selectedTile.y,
-      level: 1,
-      goldGeneration: BASE_GOLD_PER_TICK[unitType]
-    };
-    
-    buildingsRef.current.push(newBuilding);
-    setNextBuildingId(prev => prev + 1);
-    
-    console.log(`Built ${unitType} at (${selectedTile.x}, ${selectedTile.y})`);
-    
-    updateStats();
-    renderBuildings();
-    setShowBuildMenu(false);
   };
 
   const updateStats = () => {
-    const buildings = buildingsRef.current;
+    if (!gameWorldRef.current) return;
     
-    const factories = buildings.filter(b => b.type === UnitType.Factory);
-    const cities = buildings.filter(b => b.type === UnitType.City);
-    const ports = buildings.filter(b => b.type === UnitType.Port);
+    const world = gameWorldRef.current;
+    const player = world.players[0];
     
-    // Calculate stacked buildings (multiple buildings on same tile)
-    const tileUnitCount = new Map<string, number>();
-    buildings.forEach(building => {
-      const tileKey = `${building.x},${building.y}`;
-      tileUnitCount.set(tileKey, (tileUnitCount.get(tileKey) || 0) + 1);
+    const factories = player.buildings.filter(b => b.type === UnitType.Factory);
+    const cities = player.buildings.filter(b => b.type === UnitType.City);
+    const ports = player.buildings.filter(b => b.type === UnitType.Port);
+    
+    // Calculate stacked buildings
+    const buildingsByTile = new Map<string, Building[]>();
+    player.buildings.forEach(building => {
+      const key = `${building.x},${building.y}`;
+      if (!buildingsByTile.has(key)) buildingsByTile.set(key, []);
+      buildingsByTile.get(key)!.push(building);
     });
     
-    const stackedBuildings = Array.from(tileUnitCount.values())
-      .filter(count => count > 1)
-      .reduce((sum, count) => sum + count - 1, 0);
+    const stackedBuildings = Array.from(buildingsByTile.values())
+      .filter(buildings => buildings.length > 1)
+      .reduce((sum, buildings) => sum + buildings.length - 1, 0);
     
-    // Calculate total gold generation per minute
-    const totalGoldPerTick = buildings.reduce((sum, building) => {
-      // Stacking bonus: each additional building on same tile gets 50% efficiency
-      const buildingsOnSameTile = buildings.filter(b => b.x === building.x && b.y === building.y);
-      const stackPosition = buildingsOnSameTile.findIndex(b => b.id === building.id);
-      const efficiency = stackPosition === 0 ? 1.0 : 0.5;
-      return sum + (building.goldGeneration * efficiency);
-    }, 0);
+    // Calculate gold per minute (10 ticks per second)
+    let goldPerTick = 0;
+    buildingsByTile.forEach(buildings => {
+      buildings.forEach((building, index) => {
+        const efficiency = index === 0 ? 1.0 : 0.7;
+        goldPerTick += building.goldPerTick * efficiency;
+      });
+    });
     
-    const goldPerMinute = totalGoldPerTick * TICKS_PER_SECOND * 60;
-    const totalGold = stats.totalGold + (totalGoldPerTick * stats.ticksElapsed);
+    const goldPerMinute = goldPerTick * 10 * 60;
     
-    setStats(prev => ({
+    setStats({
       goldPerMinute,
-      totalGold,
+      totalGold: player.gold,
       factoryCount: factories.length,
       cityCount: cities.length,
       portCount: ports.length,
       stackedBuildings,
-      ticksElapsed: prev.ticksElapsed
-    }));
+      ticksElapsed: world.currentTick
+    });
   };
+
+  const handleCanvasClick = (event: MouseEvent) => {
+    if (!canvasRef.current || !gameWorldRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    const world = gameWorldRef.current;
+    
+    // Convert screen coordinates to world coordinates
+    const worldX = Math.floor((x / canvas.width) * world.width);
+    const worldY = Math.floor((y / canvas.height) * world.height);
+    
+    if (world.canBuildAt(worldX, worldY)) {
+      setSelectedTile({ x: worldX, y: worldY });
+      setShowBuildMenu(true);
+      renderWorld();
+    }
+  };
+
+  const buildUnit = (unitType: UnitType) => {
+    if (!selectedTile || !gameWorldRef.current) return;
+    
+    const world = gameWorldRef.current;
+    const building = world.buildStructure(1, unitType, selectedTile.x, selectedTile.y);
+    
+    if (building) {
+      console.log(`Built ${unitType} at (${selectedTile.x}, ${selectedTile.y}) for ${world.getBuildCost(unitType)} gold`);
+      updateStats();
+      renderWorld();
+    } else {
+      console.log(`Cannot build ${unitType} - insufficient gold or invalid location`);
+    }
+    
+    setShowBuildMenu(false);
+  };
+
 
   const startSimulation = () => {
     if (gameState !== 'ready' && gameState !== 'running') return;
@@ -547,15 +445,11 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
     }
     
     intervalRef.current = window.setInterval(() => {
-      // Simulate game tick
-      setStats(prev => ({
-        ...prev,
-        ticksElapsed: prev.ticksElapsed + 1,
-        totalGold: prev.totalGold + (prev.goldPerMinute / (60 * TICKS_PER_SECOND))
-      }));
-      
-      updateStats();
-      renderBuildings();
+      if (gameWorldRef.current) {
+        gameWorldRef.current.tick();
+        updateStats();
+        renderWorld();
+      }
     }, Math.max(100, 1000 / gameSpeed));
   };
 
@@ -591,17 +485,6 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
         <div className="text-center">
           <h2 className="text-xl font-semibold mb-4">Loading {selectedMap} Map...</h2>
           <div className="animate-pulse bg-muted h-2 w-64 rounded"></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameState === 'error') {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-4 text-destructive">Failed to load game</h2>
-          <Button onClick={onBack}>Back to Map Selection</Button>
         </div>
       </div>
     );
