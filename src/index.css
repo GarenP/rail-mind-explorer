@@ -53,10 +53,10 @@
     --input: 222 47% 12%;
     --ring: 200 98% 60%;
 
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(200 98% 60%), hsl(142 76% 36%));
-    --gradient-dark: linear-gradient(180deg, hsl(222 47% 8%), hsl(222 84% 4.9%));
-    --gradient-glow: radial-gradient(circle, hsl(200 100% 70% / 0.3), transparent);
+    /* Gradients - simplified and safe */
+    --gradient-primary: linear-gradient(135deg, #0ea5e9, #10b981);
+    --gradient-dark: linear-gradient(180deg, #1e293b, #0f172a);
+    --gradient-glow: radial-gradient(circle, rgba(14, 165, 233, 0.3), transparent);
 
     /* Shadows & Effects */
     --shadow-neon: 0 0 20px hsl(200 98% 60% / 0.5);

@@ -74,9 +74,9 @@ export default {
 				}
 			},
 			backgroundImage: {
-				'gradient-primary': 'var(--gradient-primary)',
-				'gradient-dark': 'var(--gradient-dark)',
-				'gradient-glow': 'var(--gradient-glow)'
+				'gradient-primary': 'linear-gradient(135deg, #0ea5e9, #10b981)',
+				'gradient-dark': 'linear-gradient(180deg, #1e293b, #0f172a)',
+				'gradient-glow': 'radial-gradient(circle, rgba(14, 165, 233, 0.3), transparent)'
 			},
 			boxShadow: {
 				'neon': 'var(--shadow-neon)',

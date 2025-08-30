@@ -9,6 +9,7 @@ import { EconomicOverview } from "@/components/EconomicOverview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Index = () => {
+  console.log('🔄 Rendering Index component');
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "connecting">("connecting");
 
   useEffect(() => {
