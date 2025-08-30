@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
+import { Canvas as FabricCanvas, Rect, Circle, FabricImage, FabricText } from 'fabric';
 
 // Simplified game types to match core mechanics
 export enum GameMapType {
@@ -33,9 +34,24 @@ interface Building {
 interface Tile {
   x: number;
   y: number;
-  terrain: number; // 0 = water, 1 = land
+  terrain: number; // Terrain value from binary data
+  magnitude: number; // Elevation data
+  isShore: boolean;
   buildings: Building[];
 }
+
+// Terrain coloring based on game's PastelTheme
+const TERRAIN_COLORS = {
+  background: '#202c47', // Deep blue background
+  water: '#3366bb', // Ocean blue
+  shore: '#4a90e2', // Lighter shore blue
+  land: {
+    low: '#8fbc8f', // Dark sea green for low elevations
+    medium: '#9acd32', // Yellow green for medium
+    high: '#daa520', // Goldenrod for high elevations
+    mountain: '#cd853f', // Peru/brown for mountains
+  }
+};
 
 interface EconomicSimulatorProps {
   selectedMap: GameMapType;
@@ -84,8 +100,9 @@ const BASE_GOLD_PER_TICK = {
 
 export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMap, onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fabricCanvasRef = useRef<FabricCanvas | null>(null);
   const intervalRef = useRef<number | null>(null);
-  const mapDataRef = useRef<Tile[][]>([]);
+  const terrainDataRef = useRef<Uint8Array | null>(null);
   const buildingsRef = useRef<Building[]>([]);
   
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'running' | 'error'>('loading');
@@ -105,190 +122,355 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [nextBuildingId, setNextBuildingId] = useState(1);
 
-  // Initialize simulated game map
+  // Load real terrain data from game files
   useEffect(() => {
-    const initializeGame = () => {
+    const loadTerrainData = async () => {
       try {
         setGameState('loading');
         
         const config = mapConfigs[selectedMap];
-        const displayWidth = 120; // Display grid size
-        const displayHeight = 80;
+        console.log('Loading terrain data for', selectedMap, 'with config:', config);
         
-        // Create simplified map data
-        const mapData: Tile[][] = [];
-        for (let y = 0; y < displayHeight; y++) {
-          mapData[y] = [];
-          for (let x = 0; x < displayWidth; x++) {
-            // Simple terrain generation - more land in center
-            const centerX = displayWidth / 2;
-            const centerY = displayHeight / 2;
-            const distFromCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-            const isLand = distFromCenter < Math.min(displayWidth, displayHeight) / 3 || Math.random() > 0.3;
-            
-            mapData[y][x] = {
-              x,
-              y,
-              terrain: isLand ? 1 : 0,
-              buildings: []
-            };
+        // Try to load actual binary terrain data
+        try {
+          const response = await fetch(`/core/resources/maps/${selectedMap.toLowerCase()}/map.bin`);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            terrainDataRef.current = new Uint8Array(arrayBuffer);
+            console.log('Loaded real terrain data:', terrainDataRef.current.length, 'bytes');
+          } else {
+            console.log('Real terrain data not available, generating procedural terrain');
+            generateProceduralTerrain(config);
           }
+        } catch (fetchError) {
+          console.log('Could not fetch terrain data, generating procedural terrain');
+          generateProceduralTerrain(config);
         }
         
-        mapDataRef.current = mapData;
         buildingsRef.current = [];
         
-        // Setup canvas rendering
+        // Setup Fabric.js canvas for realistic rendering
         setTimeout(() => {
           if (canvasRef.current) {
-            setupCanvas();
+            setupRealisticCanvas();
           }
           setGameState('ready');
         }, 500);
         
-        console.log('Simulated game initialized successfully for', selectedMap);
       } catch (error) {
-        console.error('Failed to initialize game:', error);
+        console.error('Failed to load terrain data:', error);
         setGameState('error');
       }
     };
 
-    initializeGame();
+    loadTerrainData();
   }, [selectedMap]);
 
-  const setupCanvas = () => {
-    if (!canvasRef.current) return;
+  const generateProceduralTerrain = (config: any) => {
+    // Generate realistic terrain data that mimics Australia's shape and geography
+    const width = 400; // Scaled down for display
+    const height = 300;
+    const terrainData = new Uint8Array(width * height);
     
-    const canvas = canvasRef.current;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index = y * width + x;
+        
+        // Create Australia-like shape with realistic coastline
+        const centerX = width * 0.5;
+        const centerY = height * 0.4;
+        
+        // Distance from center with some randomness for coastline
+        let distFromCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        distFromCenter += (Math.random() - 0.5) * 20; // Coastline roughness
+        
+        // Australia-specific geographical features
+        const isInMainland = distFromCenter < Math.min(width, height) * 0.35;
+        const isTasmania = Math.sqrt((x - width * 0.6) ** 2 + (y - height * 0.85) ** 2) < 15;
+        const isLand = isInMainland || isTasmania;
+        
+        if (isLand) {
+          // Vary terrain elevation for realistic coloring
+          const elevation = Math.random() * 255;
+          const coastal = distFromCenter > Math.min(width, height) * 0.25;
+          
+          if (coastal) {
+            terrainData[index] = Math.floor(50 + elevation * 0.3); // Coastal areas
+          } else {
+            terrainData[index] = Math.floor(100 + elevation * 0.6); // Inland areas
+          }
+        } else {
+          terrainData[index] = 0; // Water
+        }
+      }
+    }
     
-    // Set canvas display size
-    canvas.width = 800;
-    canvas.height = 600;
-    
-    renderMap();
+    terrainDataRef.current = terrainData;
+    console.log('Generated procedural Australia terrain:', terrainData.length, 'bytes');
   };
 
-  const renderMap = () => {
-    if (!canvasRef.current) return;
+  const setupRealisticCanvas = () => {
+    if (!canvasRef.current || !terrainDataRef.current) return;
     
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Dispose of existing canvas
+    if (fabricCanvasRef.current) {
+      fabricCanvasRef.current.dispose();
+    }
     
-    const mapData = mapDataRef.current;
-    if (!mapData.length) return;
-    
-    // Clear canvas
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Calculate tile sizes
-    const tileWidth = canvas.width / mapData[0].length;
-    const tileHeight = canvas.height / mapData.length;
-    
-    // Render terrain
-    mapData.forEach((row, y) => {
-      row.forEach((tile, x) => {
-        const pixelX = x * tileWidth;
-        const pixelY = y * tileHeight;
-        
-        // Different colors for land/water
-        if (tile.terrain === 0) {
-          ctx.fillStyle = '#1e3a8a'; // Water - dark blue
-        } else {
-          ctx.fillStyle = '#15803d'; // Land - dark green
-        }
-        
-        ctx.fillRect(pixelX, pixelY, tileWidth, tileHeight);
-      });
+    // Create new Fabric.js canvas for high-quality rendering
+    const fabricCanvas = new FabricCanvas(canvasRef.current, {
+      width: 800,
+      height: 600,
+      backgroundColor: TERRAIN_COLORS.background,
+      selection: false, // Disable object selection
+      renderOnAddRemove: false, // Manual rendering control
     });
     
-    // Render buildings
-    renderBuildings(ctx, tileWidth, tileHeight);
+    fabricCanvasRef.current = fabricCanvas;
     
-    // Highlight selected tile
-    if (selectedTile) {
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        selectedTile.x * tileWidth, 
-        selectedTile.y * tileHeight, 
-        tileWidth, 
-        tileHeight
-      );
-    }
+    renderRealisticTerrain();
+    
+    // Handle click events for building placement
+    fabricCanvas.on('mouse:down', (event) => {
+      if (event.e && terrainDataRef.current) {
+        handleCanvasClick(event.e as MouseEvent);
+      }
+    });
   };
 
-  const renderBuildings = (ctx: CanvasRenderingContext2D, tileWidth: number, tileHeight: number) => {
+  const renderRealisticTerrain = () => {
+    if (!fabricCanvasRef.current || !terrainDataRef.current) return;
+    
+    const canvas = fabricCanvasRef.current;
+    const terrainData = terrainDataRef.current;
+    
+    // Clear existing terrain objects
+    canvas.clear();
+    canvas.backgroundColor = TERRAIN_COLORS.background;
+    
+    // Calculate dimensions based on terrain data
+    const dataWidth = Math.sqrt(terrainData.length * 1.33); // Approximate width for Australia (4:3 ratio)
+    const dataHeight = Math.floor(terrainData.length / dataWidth);
+    
+    console.log('Rendering terrain with dimensions:', dataWidth, 'x', dataHeight);
+    
+    // Create terrain as image data for performance
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+    
+    tempCanvas.width = dataWidth;
+    tempCanvas.height = dataHeight;
+    
+    const imageData = tempCtx.createImageData(dataWidth, dataHeight);
+    
+    // Process terrain data and apply realistic colors
+    for (let i = 0; i < terrainData.length; i++) {
+      const terrainValue = terrainData[i];
+      const pixelIndex = i * 4;
+      
+      let color = { r: 0, g: 0, b: 0 };
+      
+      if (terrainValue === 0) {
+        // Water
+        color = { r: 51, g: 102, b: 187 }; // Ocean blue
+      } else if (terrainValue < 30) {
+        // Shore/shallow water
+        color = { r: 74, g: 144, b: 226 }; // Shore blue
+      } else if (terrainValue < 80) {
+        // Low land - coastal plains
+        color = { r: 143, g: 188, b: 143 }; // Dark sea green
+      } else if (terrainValue < 120) {
+        // Medium elevation
+        color = { r: 154, g: 205, b: 50 }; // Yellow green
+      } else if (terrainValue < 180) {
+        // Higher elevation
+        color = { r: 218, g: 165, b: 32 }; // Goldenrod
+      } else {
+        // Mountains/high elevation
+        color = { r: 205, g: 133, b: 63 }; // Peru/brown
+      }
+      
+      imageData.data[pixelIndex] = color.r;
+      imageData.data[pixelIndex + 1] = color.g;
+      imageData.data[pixelIndex + 2] = color.b;
+      imageData.data[pixelIndex + 3] = 255; // Alpha
+    }
+    
+    tempCtx.putImageData(imageData, 0, 0);
+    
+    // Create Fabric image from the terrain data
+    const terrainImage = new Image();
+    terrainImage.onload = () => {
+      const fabricImage = new FabricImage(terrainImage, {
+        left: 0,
+        top: 0,
+        scaleX: canvas.width / dataWidth,
+        scaleY: canvas.height / dataHeight,
+        selectable: false,
+        evented: false,
+      });
+      
+      canvas.add(fabricImage);
+      renderBuildings();
+      canvas.renderAll();
+    };
+    
+    terrainImage.src = tempCanvas.toDataURL();
+  };
+
+  const renderBuildings = () => {
+    if (!fabricCanvasRef.current) return;
+    
+    const canvas = fabricCanvasRef.current;
     const buildings = buildingsRef.current;
     
-    buildings.forEach((building, index) => {
-      const x = building.x * tileWidth;
-      const y = building.y * tileHeight;
+    // Remove existing building objects (remove all objects with data-type)
+    const objectsToRemove = canvas.getObjects().filter(obj => 
+      (obj as any).dataType && (obj as any).dataType.startsWith('building')
+    );
+    objectsToRemove.forEach(obj => canvas.remove(obj));
+    
+    buildings.forEach((building) => {
+      const x = (building.x / 400) * canvas.width; // Scale coordinates
+      const y = (building.y / 300) * canvas.height;
       
       // Stack offset for multiple buildings on same tile
       const buildingsOnTile = buildings.filter(b => b.x === building.x && b.y === building.y);
       const stackIndex = buildingsOnTile.findIndex(b => b.id === building.id);
-      const offset = stackIndex * 3;
+      const offset = stackIndex * 5;
       
-      // Different colors/shapes for different building types
+      let fabricObject;
+      
+      // Different shapes for different building types
       switch (building.type) {
         case UnitType.Factory:
-          ctx.fillStyle = '#dc2626'; // Red
-          ctx.fillRect(x + 2 + offset, y + 2 + offset, tileWidth - 4, tileHeight - 4);
+          fabricObject = new Rect({
+            left: x + offset,
+            top: y + offset,
+            width: 12,
+            height: 12,
+            fill: '#dc2626',
+            stroke: '#ffffff',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+          });
+          (fabricObject as any).dataType = `building-${building.id}`;
           break;
         case UnitType.City:
-          ctx.fillStyle = '#7c3aed'; // Purple
-          ctx.beginPath();
-          ctx.arc(x + tileWidth/2 + offset, y + tileHeight/2 + offset, Math.min(tileWidth, tileHeight)/3, 0, 2 * Math.PI);
-          ctx.fill();
+          fabricObject = new Circle({
+            left: x + offset,
+            top: y + offset,
+            radius: 8,
+            fill: '#7c3aed',
+            stroke: '#ffffff',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+          });
+          (fabricObject as any).dataType = `building-${building.id}`;
           break;
         case UnitType.Port:
-          ctx.fillStyle = '#0891b2'; // Cyan
-          ctx.fillRect(x + 1 + offset, y + 1 + offset, tileWidth - 2, tileHeight - 2);
+          fabricObject = new Rect({
+            left: x + offset,
+            top: y + offset,
+            width: 14,
+            height: 8,
+            fill: '#0891b2',
+            stroke: '#ffffff',
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+          });
+          (fabricObject as any).dataType = `building-${building.id}`;
           break;
       }
       
-      // Show building level/count for stacked buildings
-      if (buildingsOnTile.length > 1) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '12px Arial';
-        ctx.fillText(buildingsOnTile.length.toString(), x + 2, y + 15);
+      if (fabricObject) {
+        canvas.add(fabricObject);
+        
+        // Add count label for stacked buildings
+        if (buildingsOnTile.length > 1 && stackIndex === 0) {
+          const textObj = new FabricText(buildingsOnTile.length.toString(), {
+            left: x + 15,
+            top: y - 5,
+            fontSize: 12,
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeWidth: 0.5,
+            selectable: false,
+            evented: false,
+          });
+          (textObj as any).dataType = `building-count-${building.x}-${building.y}`;
+          canvas.add(textObj);
+        }
       }
     });
+    
+    // Highlight selected tile
+    if (selectedTile) {
+      const tileX = (selectedTile.x / 400) * canvas.width;
+      const tileY = (selectedTile.y / 300) * canvas.height;
+      
+      const highlight = new Rect({
+        left: tileX - 10,
+        top: tileY - 10,
+        width: 20,
+        height: 20,
+        fill: 'transparent',
+        stroke: '#fbbf24',
+        strokeWidth: 3,
+        selectable: false,
+        evented: false,
+      });
+      (highlight as any).dataType = 'tile-highlight';
+      
+      canvas.add(highlight);
+    }
+    
+    canvas.renderAll();
   };
 
-  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return;
+  const handleCanvasClick = (event: MouseEvent) => {
+    if (!fabricCanvasRef.current || !terrainDataRef.current) return;
     
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
+    const canvas = fabricCanvasRef.current;
+    const canvasElement = canvas.getElement();
+    const rect = canvasElement.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     
-    const mapData = mapDataRef.current;
-    if (!mapData.length) return;
+    // Convert screen coordinates to terrain coordinates
+    const terrainX = Math.floor((x / canvas.width) * 400);
+    const terrainY = Math.floor((y / canvas.height) * 300);
     
-    const tileWidth = canvas.width / mapData[0].length;
-    const tileHeight = canvas.height / mapData.length;
-    
-    const tileX = Math.floor(x / tileWidth);
-    const tileY = Math.floor(y / tileHeight);
-    
-    if (tileX >= 0 && tileX < mapData[0].length && tileY >= 0 && tileY < mapData.length) {
-      setSelectedTile({ x: tileX, y: tileY });
-      setShowBuildMenu(true);
+    // Check if clicking on land (terrain value > 0)
+    const terrainIndex = terrainY * 400 + terrainX;
+    if (terrainIndex < terrainDataRef.current.length) {
+      const terrainValue = terrainDataRef.current[terrainIndex];
+      
+      if (terrainValue > 0) { // Only allow building on land
+        setSelectedTile({ x: terrainX, y: terrainY });
+        setShowBuildMenu(true);
+        renderBuildings(); // Re-render to show selection
+      }
     }
   };
 
   const buildUnit = (unitType: UnitType) => {
-    if (!selectedTile) return;
+    if (!selectedTile || !terrainDataRef.current) return;
     
-    const mapData = mapDataRef.current;
-    if (!mapData.length) return;
+    // Check if trying to build on land
+    const terrainIndex = selectedTile.y * 400 + selectedTile.x;
+    if (terrainIndex >= terrainDataRef.current.length) {
+      console.log('Invalid tile coordinates');
+      setShowBuildMenu(false);
+      return;
+    }
     
-    const tile = mapData[selectedTile.y]?.[selectedTile.x];
-    if (!tile || tile.terrain === 0) {
+    const terrainValue = terrainDataRef.current[terrainIndex];
+    if (terrainValue === 0) {
       console.log(`Cannot build ${unitType} on water`);
       setShowBuildMenu(false);
       return;
@@ -310,7 +492,7 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
     console.log(`Built ${unitType} at (${selectedTile.x}, ${selectedTile.y})`);
     
     updateStats();
-    renderMap();
+    renderBuildings();
     setShowBuildMenu(false);
   };
 
@@ -373,7 +555,7 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
       }));
       
       updateStats();
-      renderMap();
+      renderBuildings();
     }, Math.max(100, 1000 / gameSpeed));
   };
 
@@ -447,7 +629,6 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
                 <div className="relative">
                   <canvas
                     ref={canvasRef}
-                    onClick={handleCanvasClick}
                     className="border border-muted-foreground/20 rounded cursor-crosshair"
                     style={{ width: '100%', height: 'auto' }}
                   />
