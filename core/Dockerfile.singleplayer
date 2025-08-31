@@ -1,0 +1,12 @@
+FROM node:24-slim
+WORKDIR /usr/src/app
+
+# Install dependencies and build the client
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build-prod
+
+# Serve the static build (port 8080 inside container)
+EXPOSE 8080
+CMD ["npx", "serve", "-s", "static", "-l", "8080"]

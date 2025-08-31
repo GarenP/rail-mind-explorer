@@ -55,6 +55,32 @@ See LICENSE file for more details.
    npm i
    ```
 
+## 🕹️ Single Player
+
+Run the game entirely in your browser without starting the server.
+
+### Via npm script
+
+```bash
+npm run singleplayer
+```
+
+This launches the client-only development server and opens the game in your browser.
+
+### Via Docker
+
+Build the lightweight client image:
+
+```bash
+docker build -f Dockerfile.singleplayer -t openfront-sp .
+```
+
+Run it and open <http://localhost:8080>:
+
+```bash
+docker run --rm -p 8080:8080 openfront-sp
+```
+
 ## 🎮 Running the Game
 
 ### Development Mode
