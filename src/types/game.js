@@ -1,0 +1,83 @@
+// Game types based on core OpenFrontIO structure
+
+export const GameMapType = {
+  World: "World",
+  GiantWorldMap: "Giant World Map",
+  Europe: "Europe",
+  EuropeClassic: "Europe Classic",
+  Mena: "Mena",
+  NorthAmerica: "North America",
+  SouthAmerica: "South America",
+  Oceania: "Oceania",
+  BlackSea: "Black Sea",
+  Africa: "Africa",
+  Pangaea: "Pangaea",
+  Asia: "Asia",
+  Mars: "Mars",
+  MarsRevised: "Mars Revised",
+  Britannia: "Britannia",
+  GatewayToTheAtlantic: "Gateway to the Atlantic",
+  Australia: "Australia",
+  Iceland: "Iceland",
+  EastAsia: "East Asia",
+  BetweenTwoSeas: "Between Two Seas",
+  FaroeIslands: "Faroe Islands",
+  DeglaciatedAntarctica: "Deglaciated Antarctica",
+  FalklandIslands: "Falkland Islands",
+  Baikal: "Baikal",
+  Halkidiki: "Halkidiki",
+  NorthernHemisphere: "Northern Hemisphere",
+  StraitOfGibraltar: "Strait of Gibraltar",
+  Italia: "Italia",
+  Yenisei: "Yenisei",
+  Pluto: "Pluto",
+};
+
+export const mapCategories = {
+  Continental: [
+    GameMapType.World,
+    GameMapType.GiantWorldMap,
+    GameMapType.NorthAmerica,
+    GameMapType.SouthAmerica,
+    GameMapType.Europe,
+    GameMapType.EuropeClassic,
+    GameMapType.Asia,
+    GameMapType.Africa,
+    GameMapType.Oceania,
+  ],
+  Regional: [
+    GameMapType.BlackSea,
+    GameMapType.Britannia,
+    GameMapType.GatewayToTheAtlantic,
+    GameMapType.BetweenTwoSeas,
+    GameMapType.Iceland,
+    GameMapType.EastAsia,
+    GameMapType.Mena,
+    GameMapType.Australia,
+    GameMapType.FaroeIslands,
+    GameMapType.FalklandIslands,
+    GameMapType.Baikal,
+    GameMapType.Halkidiki,
+    GameMapType.StraitOfGibraltar,
+    GameMapType.Italia,
+    GameMapType.Yenisei,
+    GameMapType.NorthernHemisphere,
+    GameMapType.Pangaea,
+    GameMapType.Pluto,
+    GameMapType.MarsRevised,
+    GameMapType.Mars,
+    GameMapType.DeglaciatedAntarctica,
+  ],
+};
+
+export const Difficulty = {
+  Easy: "Easy",
+  Medium: "Medium",
+  Hard: "Hard",
+  Impossible: "Impossible",
+};
+
+export const GameMode = {
+  FFA: "Free For All",
+  Team: "Team",
+};
