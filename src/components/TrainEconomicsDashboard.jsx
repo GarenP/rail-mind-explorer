@@ -102,22 +102,24 @@ export function TrainEconomicsDashboard() {
     return typeof num === 'number' ? num.toFixed(1) : '0';
   };
 
-  if (!gameState) {
-    return (
-      <div className="glass-card p-6 m-4">
-        <h2 className="text-xl font-bold text-foreground mb-4">Train Economics Dashboard</h2>
-        <p className="text-muted-foreground">Waiting for game to start...</p>
-      </div>
-    );
-  }
+  // Show demo data when game is not running
+  const showDemo = !gameState;
 
   return (
     <div className="fixed top-4 right-4 w-80 space-y-4 z-40">
+      {showDemo && (
+        <div className="stat-card text-center">
+          <div className="metric-label mb-2">Demo Mode</div>
+          <div className="text-sm text-muted-foreground mb-2">
+            Start a game to see live data
+          </div>
+        </div>
+      )}
       {/* Main Income Display */}
       <div className="stat-card text-center">
         <div className="metric-label mb-2">Total Income</div>
         <div className="income-counter text-3xl mb-2">
-          {formatGold(economicsData.goldPerMinute)}/min
+          {formatGold(showDemo ? 250000 : economicsData.goldPerMinute)}/min
         </div>
         <div className="text-xs text-muted-foreground">
           Gold per minute
@@ -130,15 +132,15 @@ export function TrainEconomicsDashboard() {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Base Workers:</span>
-            <span className="text-success">{formatGold(economicsData.revenueBreakdown.baseIncome)}</span>
+            <span className="text-success">{formatGold(showDemo ? 60000 : economicsData.revenueBreakdown.baseIncome)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Train Revenue:</span>
-            <span className="text-primary">{formatGold(economicsData.revenueBreakdown.trainIncome)}</span>
+            <span className="text-primary">{formatGold(showDemo ? 190000 : economicsData.revenueBreakdown.trainIncome)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Trade Ships:</span>
-            <span className="text-accent">{formatGold(economicsData.revenueBreakdown.tradeShipIncome)}</span>
+            <span className="text-accent">{formatGold(showDemo ? 0 : economicsData.revenueBreakdown.tradeShipIncome)}</span>
           </div>
         </div>
       </div>
@@ -148,19 +150,19 @@ export function TrainEconomicsDashboard() {
         <h3 className="font-semibold text-foreground mb-3">Network Stats</h3>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="text-center">
-            <div className="metric-value text-warning">{economicsData.activeFactories}</div>
+            <div className="metric-value text-warning">{showDemo ? 12 : economicsData.activeFactories}</div>
             <div className="metric-label">Factories</div>
           </div>
           <div className="text-center">
-            <div className="metric-value text-primary">{economicsData.connectedCities}</div>
+            <div className="metric-value text-primary">{showDemo ? 8 : economicsData.connectedCities}</div>
             <div className="metric-label">Cities</div>
           </div>
           <div className="text-center">
-            <div className="metric-value text-accent">{economicsData.connectedPorts}</div>
+            <div className="metric-value text-accent">{showDemo ? 4 : economicsData.connectedPorts}</div>
             <div className="metric-label">Ports</div>
           </div>
           <div className="text-center">
-            <div className="metric-value text-success">{economicsData.activeTrains}</div>
+            <div className="metric-value text-success">{showDemo ? 15 : economicsData.activeTrains}</div>
             <div className="metric-label">Active Trains</div>
           </div>
         </div>
@@ -172,15 +174,15 @@ export function TrainEconomicsDashboard() {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Avg Station Level:</span>
-            <span className="text-foreground">{formatNumber(economicsData.averageStationLevel)}</span>
+            <span className="text-foreground">{formatNumber(showDemo ? 2.3 : economicsData.averageStationLevel)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Largest Cluster:</span>
-            <span className="text-foreground">{economicsData.largestCluster}</span>
+            <span className="text-foreground">{showDemo ? 18 : economicsData.largestCluster}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Total Stations:</span>
-            <span className="text-foreground">{economicsData.totalStations}</span>
+            <span className="text-foreground">{showDemo ? 24 : economicsData.totalStations}</span>
           </div>
         </div>
       </div>
