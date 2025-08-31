@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Color palette - Train/Railway theme */
+    --primary: 206 100% 50%;        /* Bright blue (#0ea5e9) */
+    --primary-glow: 206 100% 70%;   /* Light blue glow */
+    --primary-foreground: 222 84% 5%; /* Dark blue-gray */
+    
+    --secondary: 142 76% 36%;       /* Green (#10b981) */
+    --secondary-foreground: 222 84% 5%;
+    
+    --accent: 262 83% 58%;          /* Purple accent */
+    --accent-glow: 262 83% 78%;     /* Light purple glow */
+    --accent-foreground: 210 40% 98%;
+    
+    --success: 142 76% 36%;         /* Green */
+    --success-foreground: 222 84% 5%;
+    
+    --warning: 38 92% 50%;          /* Orange */
+    --warning-foreground: 222 84% 5%;
+    
+    --destructive: 0 84% 60%;       /* Red */
+    --destructive-foreground: 210 40% 98%;
+    
+    --background: 222 84% 5%;       /* Dark navy */
+    --foreground: 210 40% 98%;      /* Light text */
+    
+    --card: 217 33% 10%;            /* Dark card background */
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222 84% 5%;
+    --popover-foreground: 210 40% 98%;
+    
+    --border: 217 33% 17%;          /* Dark border */
+    --input: 217 33% 17%;
+    --ring: 206 100% 50%;
+    
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    
+    /* Shadows */
+    --shadow-neon: 0 0 20px hsl(var(--primary) / 0.5);
+    --shadow-accent: 0 0 15px hsl(var(--accent) / 0.4);
+    --shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.3);
+  }
+
+  .dark {
+    /* Dark mode already defined as default */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/50 backdrop-blur-sm border border-border/50 rounded-xl shadow-card;
+  }
+
+  .income-counter {
+    @apply text-2xl font-bold text-primary animate-pulse-glow;
+  }
+
+  .stat-card {
+    @apply glass-card p-6 hover:bg-card/70 transition-all duration-300 hover:shadow-neon;
+  }
+
+  .metric-value {
+    @apply text-xl font-semibold text-foreground;
+  }
+
+  .metric-label {
+    @apply text-sm text-muted-foreground uppercase tracking-wide;
+  }
+}
