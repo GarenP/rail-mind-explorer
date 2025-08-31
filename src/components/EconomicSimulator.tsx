@@ -19,78 +19,54 @@ export enum UnitType {
   Port = "Port"
 }
 
-// Real OpenFrontIO terrain data loader (simplified)
-class AustraliaMapData {
+// Real OpenFrontIO terrain data loader using actual game assets
+class RealAustraliaMapData {
   width = 2000;
   height = 1500;
-  terrainData: Uint8Array;
+  terrainData: Uint8Array | null = null;
+  mapImage: HTMLImageElement | null = null;
+  isLoaded = false;
   
-  constructor() {
-    // Generate realistic Australia terrain based on actual game manifest
-    this.terrainData = new Uint8Array(this.width * this.height);
-    this.generateAustraliaShape();
-  }
-  
-  generateAustraliaShape() {
-    // Use actual Australia coordinates from manifest.json
-    const nationalCapitals = [
-      { name: "Western Australia", x: 460, y: 720 },
-      { name: "Northern Territory", x: 965, y: 340 },
-      { name: "South Australia", x: 920, y: 915 },
-      { name: "Victoria", x: 1435, y: 1220 },
-      { name: "Queensland", x: 1490, y: 555 },
-      { name: "New South Wales", x: 1605, y: 1025 },
-      { name: "Tasmania", x: 1595, y: 1380 }
-    ];
-    
-    // Create realistic Australia landmass
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const index = y * this.width + x;
-        
-        // Main continent - rough Australia shape
-        const centerX = this.width * 0.5;
-        const centerY = this.height * 0.4;
-        let distFromCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-        
-        // Australia-specific shaping
-        const isInMainland = distFromCenter < 400 && 
-                           x > centerX - 600 && x < centerX + 600 &&
-                           y > centerY - 300 && y < centerY + 500;
-        
-        // Tasmania
-        const tasX = 1595, tasY = 1380;
-        const isTasmania = Math.sqrt((x - tasX) ** 2 + (y - tasY) ** 2) < 80;
-        
-        const isLand = isInMainland || isTasmania;
-        
-        if (isLand) {
-          // Vary terrain by distance from coast
-          const coastalDistance = Math.min(distFromCenter, 600);
-          let elevation = Math.max(30, 255 - coastalDistance * 0.5 + Math.random() * 60);
-          
-          // Add some geographical features
-          if (x > centerX - 200 && x < centerX + 200 && y > centerY) {
-            elevation += 50; // Central highlands
-          }
-          
-          this.terrainData[index] = Math.floor(elevation);
-        } else {
-          this.terrainData[index] = 0; // Water
-        }
-      }
+  async loadRealMapData(): Promise<void> {
+    try {
+      // Load the actual map image
+      const imagePromise = new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = '/maps/australia/thumbnail.webp';
+      });
+
+      // Load the actual terrain binary data
+      const terrainPromise = fetch('/maps/australia/map.bin')
+        .then(response => {
+          if (!response.ok) throw new Error(`Failed to load terrain: ${response.statusText}`);
+          return response.arrayBuffer();
+        })
+        .then(buffer => new Uint8Array(buffer));
+
+      // Wait for both to load
+      const [image, terrain] = await Promise.all([imagePromise, terrainPromise]);
+      
+      this.mapImage = image;
+      this.terrainData = terrain;
+      this.isLoaded = true;
+      
+      console.log('Loaded real Australia map:', this.width, 'x', this.height, 'terrain bytes:', terrain.length);
+    } catch (error) {
+      console.error('Failed to load real map data:', error);
+      throw error;
     }
-    
-    console.log('Generated Australia terrain map:', this.width, 'x', this.height);
   }
   
   isLand(x: number, y: number): boolean {
-    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+    if (!this.terrainData || x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
     return this.terrainData[y * this.width + x] > 0;
   }
   
   getTerrain(x: number, y: number): number {
-    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
+    if (!this.terrainData || x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
     return this.terrainData[y * this.width + x];
   }
 }
@@ -218,7 +194,7 @@ interface EconomicSimulatorProps {
 
 export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMap, onBack }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mapDataRef = useRef<AustraliaMapData | null>(null);
+  const mapDataRef = useRef<RealAustraliaMapData | null>(null);
   const economicsRef = useRef<OpenFrontIOEconomics>(new OpenFrontIOEconomics());
   const intervalRef = useRef<number | null>(null);
   
@@ -239,19 +215,29 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
 
   // Initialize the real Australia map data
   useEffect(() => {
-    setGameState('loading');
-    
-    if (selectedMap === GameMapType.Australia) {
-      mapDataRef.current = new AustraliaMapData();
-    }
-    
-    setTimeout(() => {
-      if (canvasRef.current) {
-        setupCanvas();
+    const loadMapData = async () => {
+      setGameState('loading');
+      
+      if (selectedMap === GameMapType.Australia) {
+        const mapData = new RealAustraliaMapData();
+        mapDataRef.current = mapData;
+        
+        try {
+          await mapData.loadRealMapData();
+          
+          if (canvasRef.current) {
+            setupCanvas();
+          }
+          updateStats();
+          setGameState('ready');
+        } catch (error) {
+          console.error('Failed to load map:', error);
+          setGameState('ready'); // Allow fallback to continue
+        }
       }
-      updateStats();
-      setGameState('ready');
-    }, 500);
+    };
+    
+    loadMapData();
   }, [selectedMap]);
 
   const setupCanvas = () => {
@@ -285,46 +271,19 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
     const offsetX = (canvas.width - mapData.width * scale) / 2;
     const offsetY = (canvas.height - mapData.height * scale) / 2;
     
-    // Render terrain using actual game terrain coloring
-    const imageData = ctx.createImageData(Math.floor(mapData.width * scale), Math.floor(mapData.height * scale));
-    
-    for (let py = 0; py < imageData.height; py++) {
-      for (let px = 0; px < imageData.width; px++) {
-        const mapX = Math.floor(px / scale);
-        const mapY = Math.floor(py / scale);
-        const terrainValue = mapData.getTerrain(mapX, mapY);
-        
-        const pixelIndex = (py * imageData.width + px) * 4;
-        
-        let r, g, b;
-        if (terrainValue === 0) {
-          // Water - ocean blue
-          r = 37; g = 99; b = 235;
-        } else if (terrainValue < 50) {
-          // Coastal - light blue/green
-          r = 74; g = 144; b = 226;
-        } else if (terrainValue < 100) {
-          // Low land - dark sea green
-          r = 143; g = 188; b = 143;
-        } else if (terrainValue < 150) {
-          // Medium elevation - yellow green
-          r = 154; g = 205; b = 50;
-        } else if (terrainValue < 200) {
-          // High elevation - goldenrod
-          r = 218; g = 165; b = 32;
-        } else {
-          // Mountains - brown
-          r = 205; g = 133; b = 63;
-        }
-        
-        imageData.data[pixelIndex] = r;
-        imageData.data[pixelIndex + 1] = g;
-        imageData.data[pixelIndex + 2] = b;
-        imageData.data[pixelIndex + 3] = 255;
-      }
+    // If we have the real map image, draw it instead of procedural terrain
+    if (mapData.isLoaded && mapData.mapImage) {
+      const scaledWidth = mapData.width * scale;
+      const scaledHeight = mapData.height * scale;
+      
+      ctx.drawImage(
+        mapData.mapImage,
+        offsetX,
+        offsetY,
+        scaledWidth,
+        scaledHeight
+      );
     }
-    
-    ctx.putImageData(imageData, offsetX, offsetY);
     
     // Render buildings
     const economics = economicsRef.current;
@@ -503,7 +462,7 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
-                <CardTitle>Australia Map (Real Game Terrain)</CardTitle>
+                <CardTitle>Australia Map (Real OpenFrontIO Assets)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="relative">
@@ -646,7 +605,7 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({ selectedMa
                 <CardTitle>OpenFrontIO Economic Testing</CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-2">
-                <p>🗺️ <strong>Real Australia map</strong> with authentic terrain</p>
+                <p>🗺️ <strong>Real Australia map</strong> using actual game assets</p>
                 <p>🏭 <strong>Actual building mechanics</strong> and costs</p>
                 <p>📈 <strong>True stacking system</strong>: 1st building 100%, others 50%</p>
                 <p>💰 <strong>Live economic simulation</strong> at 10 ticks/second</p>
