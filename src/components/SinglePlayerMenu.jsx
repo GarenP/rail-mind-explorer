@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GameMapType, mapCategories, Difficulty, GameMode } from '../types/game.js';
 import { MapCard } from './MapCard.jsx';
-import { dockerGameManager } from '../utils/dockerIntegration.js';
+import { gameEngine } from '../game/GameEngine.js';
 import './SinglePlayerMenu.css';
 
 export function SinglePlayerMenu() {
@@ -18,16 +18,31 @@ export function SinglePlayerMenu() {
       map: selectedMap,
       difficulty: difficulty,
       gameMode: gameMode,
-      timestamp: new Date().toISOString()
+      selectedMap: selectedMap
     };
 
     try {
-      await dockerGameManager.startSinglePlayerGame(gameConfig);
-      console.log('Game started successfully');
+      // Initialize game engine
+      await gameEngine.initialize();
+      
+      // Start the game
+      await gameEngine.startGame(gameConfig);
+      
+      // Hide menu when game starts
+      setIsOpen(false);
+      
+      // Listen for game exit to show menu again
+      const handleGameExit = () => {
+        setIsOpen(true);
+        setIsStarting(false);
+        window.removeEventListener('gameExit', handleGameExit);
+      };
+      
+      window.addEventListener('gameExit', handleGameExit);
+      
     } catch (error) {
       console.error('Failed to start game:', error);
       alert(`Failed to start game: ${error.message}`);
-    } finally {
       setIsStarting(false);
     }
   };
@@ -114,8 +129,8 @@ export function SinglePlayerMenu() {
 
         {/* Instructions */}
         <div className="instructions">
-          <p>Make sure Docker is installed and running on your system.</p>
-          <p>The game will launch in a new window once the container starts.</p>
+          <p>🎮 Click "Start Game" to launch the browser-based single player experience!</p>
+          <p>📊 Interactive map with cities and ports • 🎯 Click entities to select them • ⌨️ Press ESC to exit</p>
         </div>
       </div>
     </div>
