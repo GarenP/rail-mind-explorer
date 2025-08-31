@@ -1,13 +1,20 @@
 // Simple simulation of economic mechanics with Australian map
-interface Entity {
+interface Drawable {
   x: number;
   y: number;
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
-abstract class BaseEntity implements Entity {
-  constructor(public x: number, public y: number) {}
-  abstract color: string;
+abstract class Node implements Drawable {
+  goods: number;
+  constructor(
+    public x: number,
+    public y: number,
+    public color: string,
+    goods = 0
+  ) {
+    this.goods = goods;
+  }
   draw(ctx: CanvasRenderingContext2D) {
     ctx.fillStyle = this.color;
     ctx.beginPath();
@@ -16,31 +23,23 @@ abstract class BaseEntity implements Entity {
   }
 }
 
-class City extends BaseEntity {
-  color = "blue";
-  goods = 0;
-}
+class City extends Node {}
 
-class Factory extends BaseEntity {
-  color = "gray";
-  goods = 50;
+class Factory extends Node {
   produce() {
     this.goods += 0.1;
   }
 }
 
-class Port extends BaseEntity {
-  color = "green";
-  goods = 0;
-}
+class Port extends Node {}
 
 class Train {
   x: number;
   y: number;
   cargo = 0;
   constructor(
-    public from: BaseEntity,
-    public to: BaseEntity,
+    public from: Node,
+    public to: Node,
     public speed = 1,
     public capacity = 10
   ) {
@@ -62,22 +61,12 @@ class Train {
     }
   }
   handleArrival() {
-    if (this.from instanceof Factory && this.cargo === 0) {
-      const load = Math.min(this.capacity, this.from.goods);
-      this.from.goods -= load;
-      this.cargo = load;
-    } else if (this.from instanceof City && this.cargo === 0) {
+    if (this.cargo === 0) {
       const load = Math.min(this.capacity, this.from.goods);
       this.from.goods -= load;
       this.cargo = load;
     } else {
-      if (this.to instanceof City) {
-        (this.to as City).goods += this.cargo;
-      } else if (this.to instanceof Port) {
-        (this.to as Port).goods += this.cargo;
-      } else if (this.to instanceof Factory) {
-        (this.to as Factory).goods += this.cargo;
-      }
+      this.to.goods += this.cargo;
       this.cargo = 0;
     }
   }
@@ -88,18 +77,16 @@ class Train {
 }
 
 class Game {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-  entities: BaseEntity[] = [];
-  trains: Train[] = [];
-  mapImage: HTMLImageElement;
+  private ctx: CanvasRenderingContext2D;
+  private entities: Node[] = [];
+  private trains: Train[] = [];
+  private mapImage: HTMLImageElement;
   // minimal player stats for UI overlay
-  playerName = "[TRAIN] Texas Batman";
-  population = 96.7e6;
-  troops = 3.4e6;
-  gold = 3.01e6;
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
+  private playerName = "[TRAIN] Texas Batman";
+  private population = 96.7e6;
+  private troops = 3.4e6;
+  private gold = 3.01e6;
+  constructor(private canvas: HTMLCanvasElement) {
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas not supported");
     this.ctx = context;
@@ -111,41 +98,55 @@ class Game {
     window.addEventListener("resize", () => this.resize());
     this.setup();
   }
-  setup() {
-    const factory = new Factory(520, 250);
-    const city = new City(500, 300);
-    const port = new Port(200, 300);
+  private setup() {
+    const factory = new Factory(520, 250, "gray", 50);
+    const city = new City(500, 300, "blue");
+    const port = new Port(200, 300, "green");
     this.entities.push(factory, city, port);
     this.trains.push(new Train(factory, city, 1.5), new Train(city, port, 1.5));
   }
-  loop = () => {
+  private loop = () => {
     this.update();
     this.render();
     requestAnimationFrame(this.loop);
   };
-  update() {
+  private update() {
     this.entities.forEach((e) => {
       if (e instanceof Factory) e.produce();
     });
     this.trains.forEach((t) => t.update());
   }
-  render() {
+  private render() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.drawMap();
     this.entities.forEach((e) => e.draw(this.ctx));
     this.trains.forEach((t) => t.draw(this.ctx));
+    this.drawGoods();
     this.drawUI();
   }
-  drawMap() {
-    const ctx = this.ctx;
-    if (this.mapImage.complete)
-      ctx.drawImage(this.mapImage, 0, 0, this.canvas.width, this.canvas.height);
-    else {
-      ctx.fillStyle = "#e5c37e";
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  private drawMap() {
+    if (this.mapImage.complete) {
+      this.ctx.drawImage(
+        this.mapImage,
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
+    } else {
+      this.ctx.fillStyle = "#e5c37e";
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
   }
-  drawUI() {
+  private drawGoods() {
+    this.ctx.fillStyle = "white";
+    this.ctx.font = "12px sans-serif";
+    this.ctx.textAlign = "center";
+    this.entities.forEach((e) => {
+      this.ctx.fillText(e.goods.toFixed(0), e.x, e.y - 12);
+    });
+  }
+  private drawUI() {
     const ctx = this.ctx;
     // central player label
     ctx.fillStyle = "yellow";
@@ -174,7 +175,7 @@ class Game {
       this.canvas.height - 15
     );
   }
-  resize() {
+  private resize() {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
   }
